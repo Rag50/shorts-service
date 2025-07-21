@@ -55,7 +55,7 @@ const generateFilename = () => {
 // YouTube Shorts downloader endpoint
 app.post('/api/download-shorts', async (req, res) => {
     try {
-        const { url } = req.body;
+        const { url, quality } = req.body;
 
         if (!url) {
             return res.status(400).json({ 
@@ -71,10 +71,16 @@ app.post('/api/download-shorts', async (req, res) => {
             });
         }
 
+        // Default to 720, but allow 1080 if requested
+        let videoQuality = '720';
+        if (quality && (quality === '1080' || quality === 1080)) {
+            videoQuality = '1080';
+        }
+
         const filename = generateFilename();
         const outputPath = path.join(DOWNLOADS_DIR, `${filename}.%(ext)s`);
 
-        console.log(`Starting download for: ${url}`);
+        console.log(`Starting download for: ${url} (quality: ${videoQuality})`);
 
         // Python script with yt-dlp
         const pythonScript = `
@@ -87,7 +93,7 @@ import logging
 # Disable yt-dlp logging to stdout to prevent JSON parsing issues
 logging.getLogger('yt_dlp').setLevel(logging.CRITICAL)
 
-def download_video(url, output_path):
+def download_video(url, output_path, video_quality):
     # User agents to avoid blocking
     user_agents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -95,8 +101,14 @@ def download_video(url, output_path):
         'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     ]
     
+    # Set format string based on requested quality
+    if video_quality == '1080':
+        format_str = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best'
+    else:
+        format_str = 'best[height<=720]/best'
+    
     ydl_opts = {
-        'format': 'best[height<=720]/best',  # Prefer 720p or lower for shorts
+        'format': format_str,  # Prefer 1080p or 720p for shorts
         'outtmpl': output_path,
         'noplaylist': True,
         'extract_flat': False,
@@ -179,10 +191,10 @@ def download_video(url, output_path):
         sys.exit(1)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
+    if len(sys.argv) < 3:
         result = {
             'error': 'Invalid arguments',
-            'message': 'Usage: python script.py <url> <output_path>'
+            'message': 'Usage: python script.py <url> <output_path> <quality>'
         }
         sys.stdout.write('JSON_START' + json.dumps(result) + 'JSON_END')
         sys.stdout.flush()
@@ -190,7 +202,8 @@ if __name__ == "__main__":
     
     url = sys.argv[1]
     output_path = sys.argv[2]
-    download_video(url, output_path)
+    video_quality = sys.argv[3] if len(sys.argv) > 3 else '720'
+    download_video(url, output_path, video_quality)
 `;
 
         // Write Python script to temporary file
@@ -203,7 +216,7 @@ if __name__ == "__main__":
             ? path.join(venvPath, 'Scripts', 'python.exe')
             : path.join(venvPath, 'bin', 'python');
         
-        const pythonProcess = spawn(pythonExecutable, [scriptPath, url, outputPath]);
+        const pythonProcess = spawn(pythonExecutable, [scriptPath, url, outputPath, videoQuality]);
         
         let output = '';
         let errorOutput = '';
