@@ -234,11 +234,27 @@ import sys
 import json
 import os
 import logging
+import time
+import random
 
 # Disable yt-dlp logging to stdout
 logging.getLogger('yt_dlp').setLevel(logging.CRITICAL)
 
 def download_instagram_content(url, output_path):
+    # Randomize user agents to avoid detection
+    user_agents = [
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 15_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (Android 12; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0',
+        'Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    ]
+    
+    selected_ua = random.choice(user_agents)
+    
+    # Add random delay to avoid rate limiting
+    time.sleep(random.uniform(1, 3))
+    
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'outtmpl': output_path,
@@ -248,38 +264,81 @@ def download_instagram_content(url, output_path):
         'writeinfojson': False,
         'quiet': True,
         'no_warnings': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'user_agent': selected_ua,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
+            'User-Agent': selected_ua,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
             'DNT': '1',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
         },
         'ignoreerrors': False,
         'merge_output_format': 'mp4',
         'prefer_ffmpeg': True,
+        'socket_timeout': 30,
+        'retries': 3,
+        'sleep_interval': 1,
+        'max_sleep_interval': 5,
+        'extractor_args': {
+            'instagram': {
+                'api_token': None,  # Don't use API token to avoid auth issues
+            }
+        },
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Get video info first
-            info = ydl.extract_info(url, download=False)
+            # Get video info first with retry mechanism
+            max_retries = 3
+            info = None
+            
+            for attempt in range(max_retries):
+                try:
+                    sys.stderr.write(f"Attempt {attempt + 1}/{max_retries} to extract info...\\n")
+                    info = ydl.extract_info(url, download=False)
+                    break
+                except Exception as e:
+                    sys.stderr.write(f"Attempt {attempt + 1} failed: {str(e)}\\n")
+                    if attempt < max_retries - 1:
+                        time.sleep(random.uniform(2, 5))
+                    else:
+                        raise e
+            
+            if not info:
+                raise Exception("Failed to extract video information after multiple attempts")
+            
             title = info.get('title', 'Instagram Content')
             duration = info.get('duration', 0)
             uploader = info.get('uploader', 'Unknown')
             description = info.get('description', '')
             
-            # Download the content
-            ydl.download([url])
+            sys.stderr.write(f"Successfully extracted info for: {title}\\n")
+            
+            # Download the content with retry mechanism
+            for attempt in range(max_retries):
+                try:
+                    sys.stderr.write(f"Download attempt {attempt + 1}/{max_retries}...\\n")
+                    ydl.download([url])
+                    break
+                except Exception as e:
+                    sys.stderr.write(f"Download attempt {attempt + 1} failed: {str(e)}\\n")
+                    if attempt < max_retries - 1:
+                        time.sleep(random.uniform(3, 7))
+                    else:
+                        raise e
             
             # Find the downloaded file
             base_path = output_path.replace('.%(ext)s', '')
             downloaded_file = None
             
-            for ext in ['mp4', 'webm', 'mkv', 'mov']:
+            for ext in ['mp4', 'webm', 'mkv', 'mov', 'avi']:
                 file_path = f"{base_path}.{ext}"
                 if os.path.exists(file_path):
                     downloaded_file = file_path
@@ -307,26 +366,43 @@ def download_instagram_content(url, output_path):
             sys.exit(0)
             
     except Exception as e:
-        error_msg = str(e)
-        if 'private' in error_msg.lower():
+        error_msg = str(e).lower()
+        sys.stderr.write(f"Error occurred: {str(e)}\\n")
+        
+        if 'private' in error_msg or 'this account is private' in error_msg:
             result = {
                 'error': 'Private content',
                 'message': 'This Instagram content is private and cannot be downloaded'
             }
-        elif 'not available' in error_msg.lower():
+        elif 'not available' in error_msg or 'video unavailable' in error_msg or 'does not exist' in error_msg:
             result = {
                 'error': 'Content not available',
                 'message': 'This Instagram content is not available or has been removed'
             }
-        elif 'login' in error_msg.lower() or 'authentication' in error_msg.lower():
+        elif 'login' in error_msg or 'authentication' in error_msg or 'sign up' in error_msg:
             result = {
                 'error': 'Authentication required',
-                'message': 'This content requires authentication to access'
+                'message': 'Instagram is requiring login to access this content. Try again later.'
+            }
+        elif 'rate limit' in error_msg or 'too many requests' in error_msg:
+            result = {
+                'error': 'Rate limited',
+                'message': 'Instagram is rate limiting requests. Please wait and try again later.'
+            }
+        elif 'blocked' in error_msg or 'forbidden' in error_msg:
+            result = {
+                'error': 'Access blocked',
+                'message': 'Instagram has blocked access to this content. This may be temporary.'
+            }
+        elif 'network' in error_msg or 'connection' in error_msg or 'timeout' in error_msg:
+            result = {
+                'error': 'Network error',
+                'message': 'Network connection failed. Please check your internet connection and try again.'
             }
         else:
             result = {
                 'error': 'Download failed',
-                'message': f'Failed to download Instagram content: {error_msg}'
+                'message': f'Failed to download Instagram content. Instagram may be blocking automated downloads. Error: {str(e)[:100]}'
             }
         
         sys.stdout.write('JSON_START' + json.dumps(result) + 'JSON_END')
@@ -413,6 +489,126 @@ if __name__ == "__main__":
 // Generate random filename
 const generateFilename = () => {
     return crypto.randomBytes(16).toString('hex');
+};
+
+// Alternative Instagram download method using gallery-dl as fallback
+const downloadInstagramWithGalleryDl = async (url, outputPath) => {
+    return new Promise((resolve, reject) => {
+        const pythonScript = `
+import subprocess
+import sys
+import json
+import os
+import logging
+
+def download_with_gallery_dl(url, output_path):
+    try:
+        # Try using gallery-dl as an alternative
+        gallery_dl_cmd = [
+            'gallery-dl',
+            '--write-info-json',
+            '--no-part',
+            '--output', output_path.replace('.%(ext)s', '.%(ext)s'),
+            url
+        ]
+        
+        result = subprocess.run(gallery_dl_cmd, capture_output=True, text=True, timeout=60)
+        
+        if result.returncode == 0:
+            # Look for downloaded files
+            base_path = output_path.replace('.%(ext)s', '')
+            for ext in ['mp4', 'webm', 'mkv', 'mov']:
+                file_path = f"{base_path}.{ext}"
+                if os.path.exists(file_path):
+                    response = {
+                        'success': True,
+                        'title': 'Instagram Content',
+                        'filename': os.path.basename(file_path),
+                        'duration': 0,
+                        'uploader': 'Unknown',
+                        'description': 'Downloaded via alternative method'
+                    }
+                    sys.stdout.write('JSON_START' + json.dumps(response) + 'JSON_END')
+                    sys.stdout.flush()
+                    return
+            
+        # If gallery-dl fails, return error
+        response = {
+            'error': 'Alternative download failed',
+            'message': 'Both yt-dlp and gallery-dl methods failed. Instagram may be blocking downloads.'
+        }
+        sys.stdout.write('JSON_START' + json.dumps(response) + 'JSON_END')
+        sys.stdout.flush()
+        
+    except Exception as e:
+        response = {
+            'error': 'Alternative download failed',
+            'message': f'Alternative download method failed: {str(e)}'
+        }
+        sys.stdout.write('JSON_START' + json.dumps(response) + 'JSON_END')
+        sys.stdout.flush()
+
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        response = {
+            'error': 'Invalid arguments',
+            'message': 'Usage: python script.py <url> <output_path>'
+        }
+        sys.stdout.write('JSON_START' + json.dumps(response) + 'JSON_END')
+        sys.stdout.flush()
+        sys.exit(1)
+    
+    url = sys.argv[1]
+    output_path = sys.argv[2]
+    download_with_gallery_dl(url, output_path)
+`;
+
+        // Write Python script to temporary file
+        const scriptPath = path.join(__dirname, 'temp_alternative_downloader.py');
+        fs.writeFileSync(scriptPath, pythonScript);
+
+        // Execute Python script
+        const venvPath = path.join(__dirname, 'venv');
+        const pythonExecutable = process.platform === 'win32' 
+            ? path.join(venvPath, 'Scripts', 'python.exe')
+            : path.join(venvPath, 'bin', 'python');
+        
+        const pythonProcess = spawn(pythonExecutable, [scriptPath, url, outputPath]);
+        
+        let output = '';
+        let errorOutput = '';
+
+        pythonProcess.stdout.on('data', (data) => {
+            output += data.toString();
+        });
+
+        pythonProcess.stderr.on('data', (data) => {
+            errorOutput += data.toString();
+        });
+
+        pythonProcess.on('close', (code) => {
+            // Clean up temp script
+            if (fs.existsSync(scriptPath)) {
+                fs.unlinkSync(scriptPath);
+            }
+
+            try {
+                const jsonMatch = output.match(/JSON_START(.+?)JSON_END/);
+                if (jsonMatch && jsonMatch[1]) {
+                    const result = JSON.parse(jsonMatch[1]);
+                    if (result.success) {
+                        resolve(result);
+                    } else {
+                        reject(new Error(result.message || result.error));
+                    }
+                } else {
+                    reject(new Error('Could not parse alternative download result'));
+                }
+            } catch (parseError) {
+                reject(new Error('Failed to parse alternative download result'));
+            }
+        });
+    });
 };
 
 // YouTube Shorts downloader endpoint
@@ -1195,10 +1391,35 @@ app.post('/api/instagram/download', async (req, res) => {
             }
         } catch (ytDlpError) {
             console.error('yt-dlp method failed:', ytDlpError.message);
+            
+            // Provide specific error messages based on the error
+            let errorMessage = 'Instagram download failed. ';
+            let errorType = 'Download failed';
+            
+            if (ytDlpError.message.includes('private') || ytDlpError.message.includes('Private')) {
+                errorMessage += 'This content is private and cannot be downloaded.';
+                errorType = 'Private content';
+            } else if (ytDlpError.message.includes('not available') || ytDlpError.message.includes('unavailable')) {
+                errorMessage += 'This content is not available or has been removed.';
+                errorType = 'Content not available';
+            } else if (ytDlpError.message.includes('login') || ytDlpError.message.includes('authentication')) {
+                errorMessage += 'Instagram is requiring login to access this content. This is a temporary restriction.';
+                errorType = 'Authentication required';
+            } else if (ytDlpError.message.includes('rate limit') || ytDlpError.message.includes('too many requests')) {
+                errorMessage += 'Instagram is rate limiting requests. Please wait a few minutes and try again.';
+                errorType = 'Rate limited';
+            } else if (ytDlpError.message.includes('blocked') || ytDlpError.message.includes('forbidden')) {
+                errorMessage += 'Instagram has temporarily blocked access. This usually resolves within a few hours.';
+                errorType = 'Access blocked';
+            } else {
+                errorMessage += 'Instagram may be blocking automated downloads or the content may be restricted.';
+            }
+            
             res.status(500).json({
                 success: false,
-                error: 'Download failed',
-                message: 'Instagram download failed. The content might be private, unavailable, or Instagram is blocking requests.'
+                error: errorType,
+                message: errorMessage,
+                suggestion: 'Try again later or use a different Instagram URL. Instagram frequently updates their anti-bot measures.'
             });
         }
 
@@ -1267,9 +1488,34 @@ app.post('/api/download-reels', async (req, res) => {
             }
         } catch (ytDlpError) {
             console.error('yt-dlp method failed:', ytDlpError.message);
+            
+            // Provide specific error messages based on the error
+            let errorMessage = 'Instagram download failed. ';
+            let errorType = 'Download failed';
+            
+            if (ytDlpError.message.includes('private') || ytDlpError.message.includes('Private')) {
+                errorMessage += 'This content is private and cannot be downloaded.';
+                errorType = 'Private content';
+            } else if (ytDlpError.message.includes('not available') || ytDlpError.message.includes('unavailable')) {
+                errorMessage += 'This content is not available or has been removed.';
+                errorType = 'Content not available';
+            } else if (ytDlpError.message.includes('login') || ytDlpError.message.includes('authentication')) {
+                errorMessage += 'Instagram is requiring login to access this content. This is a temporary restriction.';
+                errorType = 'Authentication required';
+            } else if (ytDlpError.message.includes('rate limit') || ytDlpError.message.includes('too many requests')) {
+                errorMessage += 'Instagram is rate limiting requests. Please wait a few minutes and try again.';
+                errorType = 'Rate limited';
+            } else if (ytDlpError.message.includes('blocked') || ytDlpError.message.includes('forbidden')) {
+                errorMessage += 'Instagram has temporarily blocked access. This usually resolves within a few hours.';
+                errorType = 'Access blocked';
+            } else {
+                errorMessage += 'Instagram may be blocking automated downloads or the content may be restricted.';
+            }
+            
             res.status(500).json({
-                error: 'Download failed',
-                message: 'Instagram download failed. The content might be private, unavailable, or Instagram is blocking requests.'
+                error: errorType,
+                message: errorMessage,
+                suggestion: 'Try again later or use a different Instagram URL. Instagram frequently updates their anti-bot measures.'
             });
         }
 

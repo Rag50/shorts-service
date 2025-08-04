@@ -39,6 +39,12 @@ A powerful Node.js API service for downloading YouTube Shorts and Instagram Reel
    pip install -r requirements.txt
    ```
 
+   **Keep yt-dlp updated for Instagram compatibility:**
+   ```bash
+   source venv/bin/activate  # Activate virtual environment
+   pip install --upgrade yt-dlp
+   ```
+
 4. **Install FFmpeg** (for video upscaling)
    - **Ubuntu/Debian**: `sudo apt install ffmpeg`
    - **macOS**: `brew install ffmpeg`
@@ -343,9 +349,30 @@ GET /api/download-file/a1b2c3d4e5f6.mp4
 ```json
 {
   "error": "Authentication required",
-  "message": "This content requires authentication to access"
+  "message": "Instagram is requiring login to access this content. This is a temporary restriction."
 }
 ```
+
+```json
+{
+  "error": "Rate limited",
+  "message": "Instagram is rate limiting requests. Please wait a few minutes and try again."
+}
+```
+
+```json
+{
+  "error": "Access blocked",
+  "message": "Instagram has temporarily blocked access. This usually resolves within a few hours."
+}
+```
+
+**Instagram Download Restrictions:**
+- Instagram frequently updates their anti-bot measures
+- Some content may require authentication
+- Rate limiting may occur with frequent requests
+- Private accounts cannot be accessed
+- Regional restrictions may apply
 
 ---
 
@@ -694,6 +721,23 @@ The API requires these Python packages (install via `pip install -r requirements
    - Private accounts cannot be accessed
    - Some content may require authentication
    - Instagram may block requests - try again later
+   - **Solution**: Wait 10-30 minutes and try again, or try a different URL
+
+4. **Instagram rate limiting**
+   ```
+   Error: "Rate limited" or "Too many requests"
+   ```
+   - Instagram limits the number of requests per time period
+   - **Solution**: Wait 30-60 minutes before trying again
+   - Avoid making too many requests in a short time
+
+5. **Instagram access blocked**
+   ```
+   Error: "Access blocked" or "Forbidden"
+   ```
+   - Instagram may temporarily block automated access
+   - **Solution**: This usually resolves within a few hours
+   - Try using a VPN or different network
 
 4. **Download timeouts**
    ```
@@ -707,6 +751,14 @@ The API requires these Python packages (install via `pip install -r requirements
    Error: EADDRINUSE: address already in use :::3000
    ```
    - Change the port using environment variable: `PORT=3001 node main.js`
+
+6. **Instagram API changes**
+   ```
+   Error: Various Instagram-related errors
+   ```
+   - Instagram frequently changes their API and anti-bot measures
+   - **Solution**: Keep yt-dlp updated: `pip install --upgrade yt-dlp`
+   - Try again after some time as restrictions are often temporary
 
 ### Debug Information
 
