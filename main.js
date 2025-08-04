@@ -241,20 +241,47 @@ import random
 logging.getLogger('yt_dlp').setLevel(logging.CRITICAL)
 
 def download_instagram_content(url, output_path):
-    # Randomize user agents to avoid detection
-    user_agents = [
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 15_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1',
+    # Detect if running in cloud environment
+    is_cloud = bool(os.environ.get('GOOGLE_CLOUD_PROJECT') or 
+                   os.environ.get('AWS_REGION') or 
+                   os.environ.get('CLOUD_PROVIDER') or
+                   os.environ.get('NODE_ENV') == 'production')
+    
+    sys.stderr.write(f"Environment: {'Cloud' if is_cloud else 'Local'}\\n")
+    
+    # Enhanced user agents with more variety for cloud environments
+    mobile_user_agents = [
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 15_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.0.0 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (Android 13; Mobile; rv:110.0) Gecko/110.0 Firefox/110.0',
         'Mozilla/5.0 (Android 12; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0',
-        'Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36',
+        'Mozilla/5.0 (iPad; CPU OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36'
     ]
     
+    desktop_user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/119.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+    ]
+    
+    # Use broader range of user agents for cloud environments
+    user_agents = mobile_user_agents + desktop_user_agents if is_cloud else mobile_user_agents[:5]
     selected_ua = random.choice(user_agents)
     
-    # Add random delay to avoid rate limiting
-    time.sleep(random.uniform(1, 3))
+    # Increased delays for cloud environments
+    delay_range = (5, 15) if is_cloud else (2, 8)
+    delay = random.uniform(*delay_range)
+    sys.stderr.write(f"Waiting {delay:.1f} seconds before request...\\n")
+    time.sleep(delay)
     
+    # Base configuration
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'outtmpl': output_path,
@@ -265,10 +292,14 @@ def download_instagram_content(url, output_path):
         'quiet': True,
         'no_warnings': True,
         'user_agent': selected_ua,
+        'socket_timeout': 120 if is_cloud else 60,
+        'retries': 8 if is_cloud else 5,
+        'sleep_interval': 5 if is_cloud else 2,
+        'max_sleep_interval': 20 if is_cloud else 8,
         'http_headers': {
             'User-Agent': selected_ua,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Language': 'en-US,en;q=0.9,es;q=0.8,pt;q=0.7,fr;q=0.6',
             'Accept-Encoding': 'gzip, deflate, br',
             'DNT': '1',
             'Connection': 'keep-alive',
@@ -278,37 +309,64 @@ def download_instagram_content(url, output_path):
             'Sec-Fetch-Site': 'none',
             'Sec-Fetch-User': '?1',
             'Cache-Control': 'max-age=0',
+            'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'Sec-Ch-Ua-Mobile': '?1' if 'Mobile' in selected_ua else '?0',
+            'Sec-Ch-Ua-Platform': '"Android"' if 'Android' in selected_ua else '"iOS"' if 'iPhone' in selected_ua or 'iPad' in selected_ua else '"Windows"',
         },
         'ignoreerrors': False,
+    }
+    
+    # Add proxy support if configured (useful for cloud environments)
+    proxy_url = os.environ.get('INSTAGRAM_PROXY_URL')
+    if proxy_url:
+        sys.stderr.write(f"Using proxy: {proxy_url.split('@')[-1] if '@' in proxy_url else proxy_url}\\n")
+        ydl_opts['proxy'] = proxy_url
         'merge_output_format': 'mp4',
         'prefer_ffmpeg': True,
-        'socket_timeout': 30,
-        'retries': 3,
-        'sleep_interval': 1,
-        'max_sleep_interval': 5,
+        'socket_timeout': 60,
+        'retries': 5,
+        'sleep_interval': 2,
+        'max_sleep_interval': 10,
         'extractor_args': {
             'instagram': {
-                'api_token': None,  # Don't use API token to avoid auth issues
+                'api_token': None,
+                'include_onion_networks': False,
             }
         },
+        # Add proxy rotation capability (requires proxy setup)
+        # 'proxy': 'socks5://proxy-server:port',  # Uncomment and configure if using proxy
     }
     
     try:
+        # Method 1: Try with enhanced yt-dlp settings
+        sys.stderr.write("Attempting Method 1: Enhanced yt-dlp with cloud-optimized settings...\\n")
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             # Get video info first with retry mechanism
-            max_retries = 3
+            max_retries = 5
             info = None
             
             for attempt in range(max_retries):
                 try:
-                    sys.stderr.write(f"Attempt {attempt + 1}/{max_retries} to extract info...\\n")
+                    sys.stderr.write(f"Info extraction attempt {attempt + 1}/{max_retries}...\\n")
                     info = ydl.extract_info(url, download=False)
+                    sys.stderr.write("Successfully extracted video info\\n")
                     break
                 except Exception as e:
+                    error_msg = str(e).lower()
                     sys.stderr.write(f"Attempt {attempt + 1} failed: {str(e)}\\n")
+                    
+                    # If it's a specific error that won't resolve with retries, break early
+                    if 'private' in error_msg or 'not available' in error_msg or 'does not exist' in error_msg:
+                        if attempt >= 1:  # Try at least twice for these errors
+                            raise e
+                    
                     if attempt < max_retries - 1:
-                        time.sleep(random.uniform(2, 5))
+                        retry_delay = random.uniform(5, 15)  # Longer delays for cloud
+                        sys.stderr.write(f"Waiting {retry_delay:.1f} seconds before retry...\\n")
+                        time.sleep(retry_delay)
                     else:
+                        # Try Method 2 if all attempts fail
                         raise e
             
             if not info:
@@ -326,15 +384,93 @@ def download_instagram_content(url, output_path):
                 try:
                     sys.stderr.write(f"Download attempt {attempt + 1}/{max_retries}...\\n")
                     ydl.download([url])
+                    sys.stderr.write("Download completed successfully\\n")
                     break
                 except Exception as e:
                     sys.stderr.write(f"Download attempt {attempt + 1} failed: {str(e)}\\n")
                     if attempt < max_retries - 1:
-                        time.sleep(random.uniform(3, 7))
+                        retry_delay = random.uniform(8, 20)
+                        sys.stderr.write(f"Waiting {retry_delay:.1f} seconds before retry...\\n")
+                        time.sleep(retry_delay)
                     else:
                         raise e
+        
+    except Exception as method1_error:
+        sys.stderr.write(f"Method 1 failed: {str(method1_error)}\\n")
+        
+        # Method 2: Try with different extractor settings
+        sys.stderr.write("Attempting Method 2: Alternative extractor settings...\\n")
+        
+        try:
+            # Wait before trying alternative method
+            time.sleep(random.uniform(10, 20))
             
-            # Find the downloaded file
+            alt_ydl_opts = ydl_opts.copy()
+            alt_ydl_opts.update({
+                'extractor_args': {
+                    'instagram': {
+                        'api_token': None,
+                        'include_onion_networks': True,
+                    }
+                },
+                'socket_timeout': 120,
+                'retries': 8,
+                'sleep_interval': 5,
+                'max_sleep_interval': 20,
+            })
+            
+            with yt_dlp.YoutubeDL(alt_ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                title = info.get('title', 'Instagram Content')
+                duration = info.get('duration', 0)
+                uploader = info.get('uploader', 'Unknown')
+                description = info.get('description', '')
+                
+                ydl.download([url])
+                
+        except Exception as method2_error:
+            sys.stderr.write(f"Method 2 failed: {str(method2_error)}\\n")
+            
+            # Method 3: Try with minimal settings (last resort)
+            sys.stderr.write("Attempting Method 3: Minimal settings (last resort)...\\n")
+            
+            try:
+                time.sleep(random.uniform(15, 30))
+                
+                minimal_opts = {
+                    'format': 'best',
+                    'outtmpl': output_path,
+                    'quiet': True,
+                    'no_warnings': True,
+                    'socket_timeout': 180,
+                    'retries': 10,
+                    'sleep_interval': 10,
+                    'max_sleep_interval': 30,
+                }
+                
+                with yt_dlp.YoutubeDL(minimal_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    title = info.get('title', 'Instagram Content')
+                    duration = info.get('duration', 0)
+                    uploader = info.get('uploader', 'Unknown')
+                    description = info.get('description', '')
+                    
+                    ydl.download([url])
+                    
+            except Exception as method3_error:
+                sys.stderr.write(f"All methods failed. Last error: {str(method3_error)}\\n")
+                
+                # Check for specific Instagram blocking patterns
+                error_msg = str(method1_error).lower()
+                if any(phrase in error_msg for phrase in ['not available', 'private', 'removed', 'restricted']):
+                    if is_cloud:
+                        raise Exception(f"Instagram content blocked: {str(method1_error)}. This is likely due to Instagram blocking datacenter/cloud IPs. Consider using a residential proxy or VPN. For production deployments, you may need to implement proxy rotation or use a service like ProxyMesh, Bright Data, or similar residential proxy providers.")
+                    else:
+                        raise Exception(f"Instagram content not available: {str(method1_error)}. The content may be private, deleted, or restricted.")
+                else:
+                    raise Exception(f"All download methods failed. Error details: {str(method3_error)}. If you're running on a cloud platform (GCP, AWS, Azure), Instagram may be blocking datacenter IPs. Try using a residential proxy service.")
+    
+    # Find the downloaded file (this part remains the same for all methods)
             base_path = output_path.replace('.%(ext)s', '')
             downloaded_file = None
             

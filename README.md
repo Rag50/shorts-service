@@ -12,50 +12,81 @@ A powerful Node.js API service for downloading YouTube Shorts and Instagram Reel
 - 📦 **Batch Processing**: Process multiple Instagram URLs at once
 - 🔄 **Multiple Fallbacks**: Multiple extraction methods for reliability
 
-## Prerequisites
+## 🔧 Installation & Setup
 
-- Node.js (v14 or higher)
-- Python 3.8+ with yt-dlp installed
-- FFmpeg (for video upscaling)
-- Virtual environment with required Python packages
+### Prerequisites
+- Node.js (v14+)
+- Python 3.7+
+- FFmpeg
 
-## Installation
+### Local Development Setup
+```bash
+# Clone the repository
+git clone <repository-url>
+cd shorts-download
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd shorts-dowload
-   ```
+# Install Node.js dependencies
+npm install
 
-2. **Install Node.js dependencies**
-   ```bash
-   npm install
-   ```
+# Install Python dependencies
+pip install -r requirements.txt
 
-3. **Set up Python virtual environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
+# Start the server
+npm start
+```
 
-   **Keep yt-dlp updated for Instagram compatibility:**
-   ```bash
-   source venv/bin/activate  # Activate virtual environment
-   pip install --upgrade yt-dlp
-   ```
+### Cloud Deployment (GCP/AWS/Azure)
 
-4. **Install FFmpeg** (for video upscaling)
-   - **Ubuntu/Debian**: `sudo apt install ffmpeg`
-   - **macOS**: `brew install ffmpeg`
-   - **Windows**: Download from [FFmpeg website](https://ffmpeg.org/download.html)
+When deploying to cloud platforms, Instagram may block requests from datacenter IPs. Here are solutions:
 
-5. **Start the server**
-   ```bash
-   npm start
-   # or
-   node main.js
-   ```
+#### Option 1: Environment Variables
+```bash
+# Set environment variables for cloud detection
+export NODE_ENV=production
+export GOOGLE_CLOUD_PROJECT=your-project-id  # For GCP
+export AWS_REGION=us-east-1                  # For AWS
+
+# Optional: Configure proxy for Instagram downloads
+export INSTAGRAM_PROXY_URL=http://username:password@proxy-server:port
+```
+
+#### Option 2: Use Residential Proxy Services
+For production Instagram downloads, consider using:
+- **ProxyMesh**: Residential proxies
+- **Bright Data**: High-quality proxy network
+- **Smartproxy**: Residential proxy pool
+- **Storm Proxies**: Dedicated Instagram proxies
+
+Example proxy configuration:
+```bash
+export INSTAGRAM_PROXY_URL=http://user:pass@residential-proxy.example.com:8080
+```
+
+#### Option 3: VPN Solutions
+- Use a VPN service that provides residential IP addresses
+- Configure your cloud instance to route traffic through the VPN
+
+### Docker Deployment
+```dockerfile
+FROM node:16-alpine
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+
+# Install Python and dependencies
+RUN apk add --no-cache python3 py3-pip ffmpeg
+COPY requirements.txt ./
+RUN pip3 install -r requirements.txt
+
+COPY . .
+EXPOSE 3000
+
+# Set environment for cloud deployment
+ENV NODE_ENV=production
+
+CMD ["npm", "start"]
+```
 
 The server will start on port 3000 by default (or the port specified in the `PORT` environment variable).
 
@@ -697,49 +728,134 @@ The API requires these Python packages (install via `pip install -r requirements
 
 ---
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
 ### Common Issues
 
-1. **FFmpeg not found**
-   ```
-   Error: "FFmpeg not found. Please install FFmpeg to enable upscaling."
-   ```
-   - Install FFmpeg and ensure it's in your PATH
+#### Instagram Downloads Failing
+**Error**: "This Instagram content is not available or has been removed"
 
-2. **Python virtual environment issues**
+**Causes & Solutions**:
+
+1. **Cloud Platform IP Blocking** (Most Common)
+   - Instagram blocks requests from datacenter IPs (GCP, AWS, Azure)
+   - **Solution**: Use residential proxy service
+   ```bash
+   export INSTAGRAM_PROXY_URL=http://user:pass@residential-proxy.com:8080
+   ```
+
+2. **Rate Limiting**
+   - Too many requests in short time
+   - **Solution**: Wait 30-60 minutes before trying again
+   - The API automatically implements delays and retries
+
+3. **Content Actually Private/Deleted**
+   - The Instagram content is genuinely unavailable
+   - **Solution**: Verify the URL is correct and content is public
+
+4. **User Agent Detection**
+   - Instagram blocking your user agent
+   - **Solution**: The API automatically rotates user agents
+
+#### YouTube Downloads Failing
+**Error**: Various yt-dlp errors
+
+**Solutions**:
+1. Update yt-dlp: `pip install -U yt-dlp`
+2. Check if the video is available in your region
+3. Verify the URL format is correct
+
+#### FFmpeg Issues
+**Error**: FFmpeg not found or encoding failures
+
+**Solutions**:
+1. **Install FFmpeg**:
+   - Ubuntu/Debian: `sudo apt install ffmpeg`
+   - macOS: `brew install ffmpeg`
+   - Windows: Download from [ffmpeg.org](https://ffmpeg.org)
+
+2. **Check FFmpeg Path**:
+   ```bash
+   which ffmpeg  # Should show path to ffmpeg
+   ```
+
+#### Server Performance
+**Issue**: Slow downloads or timeouts
+
+**Solutions**:
+1. **Increase timeout limits** in your reverse proxy (nginx, etc.)
+2. **Use streaming downloads** (already implemented)
+3. **Monitor server resources** (CPU, memory, disk space)
+
+### Cloud-Specific Troubleshooting
+
+#### Google Cloud Platform (GCP)
+```bash
+# Set GCP environment variables
+export GOOGLE_CLOUD_PROJECT=your-project-id
+export NODE_ENV=production
+
+# For App Engine, add to app.yaml:
+runtime: nodejs16
+env_variables:
+  NODE_ENV: production
+  INSTAGRAM_PROXY_URL: your-proxy-url
+```
+
+#### AWS
+```bash
+# Set AWS environment variables
+export AWS_REGION=us-east-1
+export NODE_ENV=production
+
+# For Elastic Beanstalk, add to .ebextensions/environment.config:
+option_settings:
+  aws:elasticbeanstalk:application:environment:
+    NODE_ENV: production
+    INSTAGRAM_PROXY_URL: your-proxy-url
+```
+
+#### Azure
+```bash
+# Set Azure environment variables
+export AZURE_REGION=eastus
+export NODE_ENV=production
+
+# For App Service, set in Application Settings:
+NODE_ENV=production
+INSTAGRAM_PROXY_URL=your-proxy-url
+```
+
+### Monitoring & Debugging
+
+#### Enable Debug Logging
+```bash
+# Set debug mode
+export DEBUG=true
+
+# Check logs for detailed error information
+tail -f /var/log/your-app.log
+```
+
+#### Test Endpoints
+```bash
+# Test health endpoint
+curl http://localhost:3000/api/health
+
+# Test Instagram info (without downloading)
+curl "http://localhost:3000/api/instagram/info?url=INSTAGRAM_URL"
+```
+
+### Legacy Issues (Less Common)
+
+1. **Python virtual environment issues**
    ```
    Error: Python executable not found
    ```
    - Ensure the virtual environment is activated
    - Install required packages: `pip install -r requirements.txt`
 
-3. **Instagram content not accessible**
-   ```
-   Error: "Private content" or "Authentication required"
-   ```
-   - Private accounts cannot be accessed
-   - Some content may require authentication
-   - Instagram may block requests - try again later
-   - **Solution**: Wait 10-30 minutes and try again, or try a different URL
-
-4. **Instagram rate limiting**
-   ```
-   Error: "Rate limited" or "Too many requests"
-   ```
-   - Instagram limits the number of requests per time period
-   - **Solution**: Wait 30-60 minutes before trying again
-   - Avoid making too many requests in a short time
-
-5. **Instagram access blocked**
-   ```
-   Error: "Access blocked" or "Forbidden"
-   ```
-   - Instagram may temporarily block automated access
-   - **Solution**: This usually resolves within a few hours
-   - Try using a VPN or different network
-
-4. **Download timeouts**
+2. **Download timeouts**
    ```
    Error: "Download took too long and was cancelled"
    ```
