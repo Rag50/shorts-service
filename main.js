@@ -241,13 +241,31 @@ import random
 logging.getLogger('yt_dlp').setLevel(logging.CRITICAL)
 
 def download_instagram_content(url, output_path):
-    # Detect if running in cloud environment
-    is_cloud = bool(os.environ.get('GOOGLE_CLOUD_PROJECT') or 
-                   os.environ.get('AWS_REGION') or 
-                   os.environ.get('CLOUD_PROVIDER') or
-                   os.environ.get('NODE_ENV') == 'production')
+    # Enhanced cloud environment detection
+    is_cloud = bool(
+        os.environ.get('GOOGLE_CLOUD_PROJECT') or 
+        os.environ.get('AWS_REGION') or 
+        os.environ.get('CLOUD_PROVIDER') or
+        os.environ.get('NODE_ENV') == 'production' or
+        os.environ.get('KUBERNETES_SERVICE_HOST') or  # Kubernetes
+        os.environ.get('HEROKU_APP_NAME') or         # Heroku
+        os.environ.get('AZURE_FUNCTIONS_ENVIRONMENT') # Azure
+    )
     
-    sys.stderr.write(f"Environment: {'Cloud' if is_cloud else 'Local'}\\n")
+    # Check if we're running on a known cloud IP range (basic detection)
+    try:
+        import socket
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        # Common cloud IP patterns (basic check)
+        cloud_patterns = ['10.', '172.', '192.168.']
+        is_likely_cloud = not any(local_ip.startswith(pattern) for pattern in cloud_patterns)
+        if is_likely_cloud:
+            is_cloud = True
+    except:
+        pass
+    
+    sys.stderr.write(f"Environment: {'Cloud/Datacenter' if is_cloud else 'Local'} | URL: {url[:50]}...\\n")
     
     # Enhanced user agents with more variety for cloud environments
     mobile_user_agents = [
@@ -321,21 +339,18 @@ def download_instagram_content(url, output_path):
     if proxy_url:
         sys.stderr.write(f"Using proxy: {proxy_url.split('@')[-1] if '@' in proxy_url else proxy_url}\\n")
         ydl_opts['proxy'] = proxy_url
+    
+    # Additional settings for better compatibility
+    ydl_opts.update({
         'merge_output_format': 'mp4',
         'prefer_ffmpeg': True,
-        'socket_timeout': 60,
-        'retries': 5,
-        'sleep_interval': 2,
-        'max_sleep_interval': 10,
         'extractor_args': {
             'instagram': {
                 'api_token': None,
                 'include_onion_networks': False,
             }
         },
-        # Add proxy rotation capability (requires proxy setup)
-        # 'proxy': 'socks5://proxy-server:port',  # Uncomment and configure if using proxy
-    }
+    })
     
     try:
         # Method 1: Try with enhanced yt-dlp settings
@@ -464,11 +479,19 @@ def download_instagram_content(url, output_path):
                 error_msg = str(method1_error).lower()
                 if any(phrase in error_msg for phrase in ['not available', 'private', 'removed', 'restricted']):
                     if is_cloud:
-                        raise Exception(f"Instagram content blocked: {str(method1_error)}. This is likely due to Instagram blocking datacenter/cloud IPs. Consider using a residential proxy or VPN. For production deployments, you may need to implement proxy rotation or use a service like ProxyMesh, Bright Data, or similar residential proxy providers.")
+                        raise Exception(f"Instagram content blocked: {str(method1_error)}. This is likely due to Instagram blocking datacenter/cloud IPs. Solutions: 1) Use a residential proxy service (ProxyMesh, Bright Data, etc.), 2) Deploy on a different cloud region, 3) Use a VPN service with residential IPs. Error: {str(method1_error)}")
                     else:
                         raise Exception(f"Instagram content not available: {str(method1_error)}. The content may be private, deleted, or restricted.")
+                elif 'login' in error_msg or 'authentication' in error_msg:
+                    raise Exception(f"Instagram authentication required. Instagram is requesting login for this content. This often happens with cloud IPs. Try using a proxy or VPN service.")
+                elif 'rate limit' in error_msg or 'too many requests' in error_msg:
+                    raise Exception(f"Instagram rate limiting detected. Wait 30-60 minutes before trying again. If you're on a cloud platform, consider using proxy rotation.")
                 else:
-                    raise Exception(f"All download methods failed. Error details: {str(method3_error)}. If you're running on a cloud platform (GCP, AWS, Azure), Instagram may be blocking datacenter IPs. Try using a residential proxy service.")
+                    # For cloud environments, provide specific guidance
+                    if is_cloud:
+                        raise Exception(f"All download methods failed. Cloud platform detected - Instagram often blocks datacenter IPs. Solutions: 1) Set INSTAGRAM_PROXY_URL environment variable with a residential proxy, 2) Use a different cloud region, 3) Deploy to a platform with residential IPs. Error: {str(method3_error)}")
+                    else:
+                        raise Exception(f"All download methods failed. Error details: {str(method3_error)}. Try again later as Instagram may be temporarily blocking requests.")
     
     # Find the downloaded file (this part remains the same for all methods)
             base_path = output_path.replace('.%(ext)s', '')
@@ -1836,21 +1859,201 @@ app.get('/api/download-file/:filename', (req, res) => {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
+    // Enhanced health check with environment detection
+    const isCloud = !!(
+        process.env.GOOGLE_CLOUD_PROJECT || 
+        process.env.AWS_REGION || 
+        process.env.CLOUD_PROVIDER ||
+        process.env.NODE_ENV === 'production' ||
+        process.env.KUBERNETES_SERVICE_HOST ||
+        process.env.HEROKU_APP_NAME ||
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT
+    );
+    
+    const proxyConfigured = !!process.env.INSTAGRAM_PROXY_URL;
+    
     res.json({ 
         status: 'OK', 
         message: 'YouTube Shorts & Instagram Reels Downloader API is running',
+        environment: isCloud ? 'cloud/datacenter' : 'local',
+        proxy_configured: proxyConfigured,
+        node_env: process.env.NODE_ENV || 'development',
+        cloud_info: {
+            gcp: !!process.env.GOOGLE_CLOUD_PROJECT,
+            aws: !!process.env.AWS_REGION,
+            azure: !!process.env.AZURE_FUNCTIONS_ENVIRONMENT,
+            heroku: !!process.env.HEROKU_APP_NAME,
+            kubernetes: !!process.env.KUBERNETES_SERVICE_HOST
+        },
         endpoints: {
             youtube: '/api/download-shorts',
             instagram: {
                 info: '/api/instagram/info',
                 download: '/api/instagram/download', 
                 downloadReels: '/api/download-reels',
-                batch: '/api/instagram/batch'
+                batch: '/api/instagram/batch',
+                test: '/api/test/instagram'
             },
             download: '/api/download-file/:filename'
         },
         timestamp: new Date().toISOString()
     });
+});
+
+// Test Instagram connectivity endpoint
+app.post('/api/test/instagram', async (req, res) => {
+    try {
+        const { url } = req.body;
+        
+        if (!url) {
+            return res.status(400).json({
+                success: false,
+                error: 'URL is required for testing'
+            });
+        }
+        
+        if (!validateInstagramUrl(url)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid Instagram URL'
+            });
+        }
+        
+        // Basic connectivity test without downloading
+        const testScript = `
+import requests
+import sys
+import json
+import os
+
+def test_instagram_access(url):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+    }
+    
+    is_cloud = bool(
+        os.environ.get('GOOGLE_CLOUD_PROJECT') or 
+        os.environ.get('AWS_REGION') or 
+        os.environ.get('NODE_ENV') == 'production'
+    )
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        result = {
+            'success': True,
+            'status_code': response.status_code,
+            'accessible': response.status_code == 200,
+            'environment': 'cloud' if is_cloud else 'local',
+            'response_size': len(response.content),
+            'headers_received': dict(response.headers),
+            'proxy_configured': bool(os.environ.get('INSTAGRAM_PROXY_URL')),
+            'message': 'Instagram page accessible' if response.status_code == 200 else f'Instagram returned status {response.status_code}'
+        }
+        
+        if response.status_code != 200:
+            result['warning'] = 'Non-200 status code may indicate blocking or content issues'
+            
+        sys.stdout.write('JSON_START' + json.dumps(result) + 'JSON_END')
+        
+    except requests.exceptions.Timeout:
+        result = {
+            'success': False,
+            'error': 'Timeout',
+            'message': 'Request to Instagram timed out',
+            'environment': 'cloud' if is_cloud else 'local',
+            'suggestion': 'Instagram may be blocking requests from your IP'
+        }
+        sys.stdout.write('JSON_START' + json.dumps(result) + 'JSON_END')
+        
+    except requests.exceptions.ConnectionError:
+        result = {
+            'success': False,
+            'error': 'Connection Error',
+            'message': 'Could not connect to Instagram',
+            'environment': 'cloud' if is_cloud else 'local',
+            'suggestion': 'Check internet connection or firewall settings'
+        }
+        sys.stdout.write('JSON_START' + json.dumps(result) + 'JSON_END')
+        
+    except Exception as e:
+        result = {
+            'success': False,
+            'error': 'Request Failed',
+            'message': str(e),
+            'environment': 'cloud' if is_cloud else 'local'
+        }
+        sys.stdout.write('JSON_START' + json.dumps(result) + 'JSON_END')
+
+if __name__ == "__main__":
+    url = sys.argv[1] if len(sys.argv) > 1 else "https://www.instagram.com"
+    test_instagram_access(url)
+`;
+        
+        const filename = generateFilename();
+        const scriptPath = path.join(__dirname, `temp_test_${filename}.py`);
+        fs.writeFileSync(scriptPath, testScript);
+        
+        const venvPath = path.join(__dirname, 'venv');
+        const pythonExecutable = process.platform === 'win32' 
+            ? path.join(venvPath, 'Scripts', 'python.exe')
+            : path.join(venvPath, 'bin', 'python');
+        
+        const pythonProcess = spawn(pythonExecutable, [scriptPath, url]);
+        
+        let output = '';
+        let errorOutput = '';
+        
+        pythonProcess.stdout.on('data', (data) => {
+            output += data.toString();
+        });
+        
+        pythonProcess.stderr.on('data', (data) => {
+            errorOutput += data.toString();
+        });
+        
+        pythonProcess.on('close', (code) => {
+            // Clean up
+            if (fs.existsSync(scriptPath)) {
+                fs.unlinkSync(scriptPath);
+            }
+            
+            try {
+                const jsonMatch = output.match(/JSON_START(.+?)JSON_END/);
+                if (jsonMatch && jsonMatch[1]) {
+                    const result = JSON.parse(jsonMatch[1]);
+                    res.json(result);
+                } else {
+                    res.status(500).json({
+                        success: false,
+                        error: 'Test failed',
+                        message: 'Could not parse test result',
+                        debug: { output, errorOutput }
+                    });
+                }
+            } catch (parseError) {
+                res.status(500).json({
+                    success: false,
+                    error: 'Parse error',
+                    message: 'Could not parse test result',
+                    debug: { output, errorOutput }
+                });
+            }
+        });
+        
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: 'Server error',
+            message: error.message
+        });
+    }
 });
 
 // Error handling middleware

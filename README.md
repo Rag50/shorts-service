@@ -842,8 +842,29 @@ tail -f /var/log/your-app.log
 # Test health endpoint
 curl http://localhost:3000/api/health
 
+# Test Instagram connectivity (new debug endpoint)
+curl -X POST http://localhost:3000/api/test/instagram \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://www.instagram.com/reel/SHORTCODE/"}'
+
 # Test Instagram info (without downloading)
 curl "http://localhost:3000/api/instagram/info?url=INSTAGRAM_URL"
+```
+
+#### Debug Instagram Issues on Cloud Platforms
+```bash
+# 1. Check your environment
+curl http://your-domain.com/api/health
+
+# 2. Test Instagram connectivity
+curl -X POST http://your-domain.com/api/test/instagram \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://www.instagram.com/reel/YOUR_SHORTCODE/"}'
+
+# 3. If blocked, configure a proxy
+export INSTAGRAM_PROXY_URL=http://user:pass@residential-proxy.com:8080
+
+# 4. Restart your application and test again
 ```
 
 ### Legacy Issues (Less Common)
