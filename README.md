@@ -1,13 +1,13 @@
 # YouTube Shorts & Instagram Reels Downloader API
 
-A powerful Node.js API service for downloading YouTube Shorts and Instagram Reels with automatic upscaling capabilities.
+A powerful Node.js API service for downloading YouTube Shorts and Instagram Reels with flexible quality selection.
 
 ## Features
 
-- 🎬 **YouTube Shorts Download**: Download YouTube short videos with automatic quality detection
+- 🎬 **YouTube Shorts Download**: Download YouTube short videos with quality selection (360p, 720p, 1080p, or best available)
 - 📸 **Instagram Reels Support**: Download Instagram Reels and Posts
 - 🔍 **Content Information Extraction**: Get metadata before downloading
-- ⬆️ **Automatic Upscaling**: Upscale videos to 1080p using FFmpeg with high-quality filters
+- 🎯 **Quality Selection**: Choose specific video quality or let the system pick the best available
 - 🧹 **Auto Cleanup**: Automatic file cleanup after 1 hour
 - 📦 **Batch Processing**: Process multiple Instagram URLs at once
 - 🔄 **Multiple Fallbacks**: Multiple extraction methods for reliability
@@ -17,7 +17,7 @@ A powerful Node.js API service for downloading YouTube Shorts and Instagram Reel
 ### Prerequisites
 - Node.js (v14+)
 - Python 3.7+
-- FFmpeg
+- FFmpeg (for video processing and format conversion)
 
 ### Local Development Setup
 ```bash
@@ -104,7 +104,11 @@ Check if the API is running and get available endpoints.
   "status": "OK",
   "message": "YouTube Shorts & Instagram Reels Downloader API is running",
   "endpoints": {
-    "youtube": "/api/download-shorts",
+    "youtube": {
+      "endpoint": "/api/download-shorts",
+      "quality_options": ["best", "1080", "720", "360"],
+      "note": "Send quality parameter in request body"
+    },
     "instagram": {
       "info": "/api/instagram/info",
       "download": "/api/instagram/download",
@@ -123,12 +127,13 @@ Check if the API is running and get available endpoints.
 
 #### `POST /api/download-shorts`
 
-Download a YouTube Shorts video with automatic upscaling to 1080p if needed.
+Download a YouTube Shorts video with optional quality selection.
 
 **Request Body:**
 ```json
 {
-  "url": "https://youtube.com/shorts/VIDEO_ID"
+  "url": "https://youtube.com/shorts/VIDEO_ID",
+  "quality": "720"  // Optional: "best", "1080", "720", "360" (defaults to "best")
 }
 ```
 
@@ -136,27 +141,50 @@ Download a YouTube Shorts video with automatic upscaling to 1080p if needed.
 ```json
 {
   "success": true,
-  "message": "Video downloaded and upscaled to 1080p (upscaled) (from 720p)",
+  "message": "Video downloaded in 720p (requested: 720)",
   "title": "Amazing Short Video",
   "filename": "a1b2c3d4e5f6.mp4",
   "downloadUrl": "/api/download-file/a1b2c3d4e5f6.mp4",
   "duration": 45,
-  "quality": "1080p (upscaled)",
-  "originalQuality": "720p",
-  "upscaled": true
+  "quality": "720p",
+  "requestedQuality": "720",
+  "availableQuality": "1080p",
+  "availableHeights": [1080, 720, 480, 360]
 }
 ```
 
 **Error Responses:**
 - `400`: Invalid or missing URL
-- `408`: Download timeout (after 5 minutes)
+- `408`: Download timeout (after 2 minutes)
 - `500`: Processing failed
 
+**Quality Options:**
+- `"best"` - Download the highest quality available (default)
+- `"1080"` - Download up to 1080p quality
+- `"720"` - Download up to 720p quality  
+- `"360"` - Download up to 360p quality
+
+**Note:** If the requested quality is not available, the system will download the best quality available that is less than or equal to the requested quality.
+
 **Features:**
-- Automatic quality detection
-- Upscaling to 1080p using high-quality FFmpeg filters
+- Flexible quality selection with fallback options
+- Automatic format detection and selection
 - Duration validation (rejects videos longer than 3 minutes)
-- Original file cleanup after successful upscaling
+- Detailed quality information in response
+
+**Usage Examples:**
+
+```bash
+# Download best available quality (default)
+curl -X POST http://localhost:3000/api/download-shorts \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://youtube.com/shorts/VIDEO_ID"}'
+
+# Download specific quality
+curl -X POST http://localhost:3000/api/download-shorts \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://youtube.com/shorts/VIDEO_ID", "quality": "720"}'
+```
 
 ---
 
